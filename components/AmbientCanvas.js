@@ -62,37 +62,38 @@ float pulseR(float t, float s, float base, float amount) {
 
 float gooField(vec2 q, float t, vec2 mouse, float mouseOn) {
   float f = 0.0;
-  vec2 flow = vec2(sin(t * 0.11) * 0.04, cos(t * 0.09) * 0.028);
+  vec2 flow = vec2(sin(t * 0.11) * 0.035, cos(t * 0.09) * 0.022);
 
-  vec2 c0 = mouseShift(drift(vec2(-0.58, 0.02) + flow, t, 0.14, 0.11, 0.06, 0.05) + vec2(wob(t, 0.1, 0.055), wob(t, 0.2, 0.048)), mouse, mouseOn, 0.16);
-  vec2 c1 = mouseShift(drift(vec2(-0.24, -0.04) + flow, t, 0.16, 0.13, 0.05, 0.04) + vec2(wob(t, 0.3, 0.062), wob(t, 0.4, 0.054)), mouse, mouseOn, 0.15);
-  vec2 c2 = mouseShift(drift(vec2(0.06, 0.05) + flow, t, 0.12, 0.15, 0.07, 0.05) + vec2(wob(t, 0.5, 0.068), wob(t, 0.6, 0.058)), mouse, mouseOn, 0.17);
-  vec2 c3 = mouseShift(drift(vec2(0.36, -0.03) + flow, t, 0.15, 0.12, 0.05, 0.045) + vec2(wob(t, 0.7, 0.058), wob(t, 0.8, 0.05)), mouse, mouseOn, 0.15);
-  vec2 c4 = mouseShift(drift(vec2(0.64, 0.02) + flow, t, 0.13, 0.14, 0.055, 0.04) + vec2(wob(t, 0.9, 0.05), wob(t, 1.0, 0.044)), mouse, mouseOn, 0.14);
+  vec2 c0 = mouseShift(drift(vec2(-0.52, 0.02) + flow, t, 0.14, 0.11, 0.05, 0.04) + vec2(wob(t, 0.1, 0.045), wob(t, 0.2, 0.04)), mouse, mouseOn, 0.14);
+  vec2 c1 = mouseShift(drift(vec2(-0.2, -0.03) + flow, t, 0.16, 0.13, 0.04, 0.035) + vec2(wob(t, 0.3, 0.05), wob(t, 0.4, 0.044)), mouse, mouseOn, 0.13);
+  vec2 c2 = mouseShift(drift(vec2(0.08, 0.04) + flow, t, 0.12, 0.15, 0.055, 0.04) + vec2(wob(t, 0.5, 0.055), wob(t, 0.6, 0.048)), mouse, mouseOn, 0.15);
+  vec2 c3 = mouseShift(drift(vec2(0.34, -0.02) + flow, t, 0.15, 0.12, 0.04, 0.038) + vec2(wob(t, 0.7, 0.048), wob(t, 0.8, 0.042)), mouse, mouseOn, 0.13);
+  vec2 c4 = mouseShift(drift(vec2(0.58, 0.015) + flow, t, 0.13, 0.14, 0.045, 0.035) + vec2(wob(t, 0.9, 0.042), wob(t, 1.0, 0.036)), mouse, mouseOn, 0.12);
 
-  f += goo(q, c0, vec2(pulseR(t, 0.2, 0.24, 0.14), pulseR(t, 0.3, 0.17, 0.12)));
-  f += goo(q, c1, vec2(pulseR(t, 0.4, 0.26, 0.13), pulseR(t, 0.5, 0.19, 0.11)));
-  f += goo(q, c2, vec2(pulseR(t, 0.6, 0.28, 0.15), pulseR(t, 0.7, 0.2, 0.12)));
-  f += goo(q, c3, vec2(pulseR(t, 0.8, 0.25, 0.12), pulseR(t, 0.9, 0.18, 0.1)));
-  f += goo(q, c4, vec2(pulseR(t, 1.0, 0.22, 0.11), pulseR(t, 1.1, 0.16, 0.09)));
+  // Smaller cores → orange ribbon occupies less of the frame
+  f += goo(q, c0, vec2(pulseR(t, 0.2, 0.17, 0.12), pulseR(t, 0.3, 0.12, 0.1)));
+  f += goo(q, c1, vec2(pulseR(t, 0.4, 0.185, 0.11), pulseR(t, 0.5, 0.13, 0.09)));
+  f += goo(q, c2, vec2(pulseR(t, 0.6, 0.2, 0.12), pulseR(t, 0.7, 0.14, 0.1)));
+  f += goo(q, c3, vec2(pulseR(t, 0.8, 0.175, 0.1), pulseR(t, 0.9, 0.125, 0.085)));
+  f += goo(q, c4, vec2(pulseR(t, 1.0, 0.155, 0.09), pulseR(t, 1.1, 0.11, 0.08)));
 
-  vec2 s0 = mouseShift(orbit(vec2(-0.44, 0.3) + flow + vec2(wob2(t, 1.1, 0.07), wob2(t, 1.2, 0.062)), t, 0.22, 0.07, 0.4), mouse, mouseOn, 0.12);
-  vec2 s1 = mouseShift(orbit(vec2(-0.1, -0.32) + flow + vec2(wob2(t, 1.3, 0.068), wob2(t, 1.4, 0.06)), t, 0.19, 0.065, 1.1), mouse, mouseOn, 0.11);
-  vec2 s2 = mouseShift(orbit(vec2(0.2, 0.34) + flow + vec2(wob2(t, 1.5, 0.064), wob2(t, 1.6, 0.058)), t, 0.24, 0.068, 2.3), mouse, mouseOn, 0.11);
-  vec2 s3 = mouseShift(orbit(vec2(0.5, -0.3) + flow + vec2(wob2(t, 1.7, 0.06), wob2(t, 1.8, 0.054)), t, 0.2, 0.062, 3.7), mouse, mouseOn, 0.1);
-  vec2 s4 = mouseShift(orbit(vec2(-0.68, -0.14) + flow + vec2(wob2(t, 1.9, 0.052), wob2(t, 2.0, 0.046)), t, 0.17, 0.055, 4.9), mouse, mouseOn, 0.09);
-  vec2 s5 = mouseShift(orbit(vec2(0.74, 0.16) + flow + vec2(wob2(t, 2.1, 0.05), wob2(t, 2.2, 0.044)), t, 0.21, 0.058, 5.6), mouse, mouseOn, 0.09);
+  vec2 s0 = mouseShift(orbit(vec2(-0.4, 0.24) + flow + vec2(wob2(t, 1.1, 0.055), wob2(t, 1.2, 0.05)), t, 0.22, 0.055, 0.4), mouse, mouseOn, 0.1);
+  vec2 s1 = mouseShift(orbit(vec2(-0.08, -0.26) + flow + vec2(wob2(t, 1.3, 0.055), wob2(t, 1.4, 0.048)), t, 0.19, 0.05, 1.1), mouse, mouseOn, 0.09);
+  vec2 s2 = mouseShift(orbit(vec2(0.18, 0.28) + flow + vec2(wob2(t, 1.5, 0.05), wob2(t, 1.6, 0.046)), t, 0.24, 0.052, 2.3), mouse, mouseOn, 0.09);
+  vec2 s3 = mouseShift(orbit(vec2(0.46, -0.24) + flow + vec2(wob2(t, 1.7, 0.048), wob2(t, 1.8, 0.044)), t, 0.2, 0.048, 3.7), mouse, mouseOn, 0.08);
+  vec2 s4 = mouseShift(orbit(vec2(-0.62, -0.1) + flow + vec2(wob2(t, 1.9, 0.042), wob2(t, 2.0, 0.038)), t, 0.17, 0.042, 4.9), mouse, mouseOn, 0.07);
+  vec2 s5 = mouseShift(orbit(vec2(0.68, 0.12) + flow + vec2(wob2(t, 2.1, 0.04), wob2(t, 2.2, 0.036)), t, 0.21, 0.045, 5.6), mouse, mouseOn, 0.07);
 
-  f += gooBall(q, s0, pulseR(t, 2.5, 0.12, 0.22)) * 0.64;
-  f += gooBall(q, s1, pulseR(t, 2.6, 0.11, 0.2)) * 0.6;
-  f += gooBall(q, s2, pulseR(t, 2.7, 0.105, 0.21)) * 0.58;
-  f += gooBall(q, s3, pulseR(t, 2.8, 0.1, 0.19)) * 0.56;
-  f += gooBall(q, s4, pulseR(t, 2.9, 0.095, 0.18)) * 0.52;
-  f += gooBall(q, s5, pulseR(t, 3.0, 0.09, 0.17)) * 0.5;
+  f += gooBall(q, s0, pulseR(t, 2.5, 0.085, 0.18)) * 0.55;
+  f += gooBall(q, s1, pulseR(t, 2.6, 0.08, 0.16)) * 0.52;
+  f += gooBall(q, s2, pulseR(t, 2.7, 0.078, 0.17)) * 0.5;
+  f += gooBall(q, s3, pulseR(t, 2.8, 0.072, 0.15)) * 0.48;
+  f += gooBall(q, s4, pulseR(t, 2.9, 0.068, 0.14)) * 0.44;
+  f += gooBall(q, s5, pulseR(t, 3.0, 0.065, 0.13)) * 0.42;
 
   if (mouseOn > 0.5) {
-    f += gooBall(q, mouse, pulseR(t, 3.4, 0.12, 0.18)) * 0.52;
-    f += goo(q, mouse, vec2(0.16, 0.12)) * 0.34;
+    f += gooBall(q, mouse, pulseR(t, 3.4, 0.09, 0.15)) * 0.42;
+    f += goo(q, mouse, vec2(0.12, 0.09)) * 0.28;
   }
 
   return f;
@@ -133,10 +134,11 @@ vec3 baseColor(vec2 uv, float t, vec2 mouse, float mouseOn) {
   float field = blurField(q, t, mouse, mouseOn);
   float gooPulse = sin(t * 1.35 + field * 2.4) * 0.018;
 
-  float body = smoothstep(0.24, 0.76, field + gooPulse * 0.08);
-  float glow = smoothstep(0.04, 0.56, field + gooPulse * 0.12);
-  float halo = (glow - body * 0.44) * 1.0;
-  float core = smoothstep(0.46, 1.1, field + gooPulse * 0.05);
+  // Higher thresholds → thinner orange band, more gray/dot field
+  float body = smoothstep(0.4, 0.92, field + gooPulse * 0.08);
+  float glow = smoothstep(0.16, 0.64, field + gooPulse * 0.12);
+  float halo = (glow - body * 0.5) * 0.92;
+  float core = smoothstep(0.58, 1.15, field + gooPulse * 0.05);
 
   vec3 gray = vec3(0.753, 0.737, 0.714);
   vec3 peach = vec3(0.99, 0.56, 0.22);
@@ -151,6 +153,21 @@ vec3 baseColor(vec2 uv, float t, vec2 mouse, float mouseOn) {
 
   float hatch = sin((uv.x - uv.y) * 125.0 + t * 0.18) * (body + halo * 0.28) * 0.009;
   col -= vec3(hatch * 0.18, hatch * 0.08, 0.0);
+
+  // Dot grid covers most of the gray field (not only the orange rim)
+  vec2 cell = fract(gl_FragCoord.xy / 8.4);
+  float bead = 1.0 - smoothstep(0.16, 0.3, length(cell - 0.5));
+  float outside = (1.0 - body) * (1.0 - glow * 0.35);
+  float fieldDots = bead * outside * 0.72;
+
+  // Wider soft rim of lighter beads around the blur edge
+  float rimIso = field + gooPulse * 0.1;
+  float rim = exp(-pow((rimIso - 0.36) * 7.2, 2.0));
+  rim *= smoothstep(0.04, 0.4, glow) * (1.0 - body * 0.45);
+  float rimDots = rim * bead * 0.55;
+
+  col = mix(col, vec3(0.86, 0.84, 0.81), fieldDots);
+  col = mix(col, vec3(1.0, 0.97, 0.94), rimDots);
 
   return col;
 }
