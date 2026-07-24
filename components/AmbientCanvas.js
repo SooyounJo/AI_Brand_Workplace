@@ -152,15 +152,15 @@ vec3 baseColor(vec2 uv, float t, vec2 mouse, float mouseOn) {
   float hatch = sin((uv.x - uv.y) * 125.0 + t * 0.18) * (body + halo * 0.28) * 0.009;
   col -= vec3(hatch * 0.18, hatch * 0.08, 0.0);
 
-  // Strong grid dots on the orange rim only
+  // Strong grid dots on the orange rim (slightly wider band)
   vec2 cell = fract(gl_FragCoord.xy / 6.5);
   float bead = 1.0 - smoothstep(0.1, 0.26, length(cell - 0.5));
   float rimIso = field + gooPulse * 0.1;
-  float rim = exp(-pow((rimIso - 0.4) * 5.2, 2.0));
-  rim *= smoothstep(0.06, 0.45, glow) * (1.0 - body * 0.3);
+  float rim = exp(-pow((rimIso - 0.36) * 3.8, 2.0));
+  rim *= smoothstep(0.03, 0.52, glow) * (1.0 - body * 0.22);
   float edgeBand =
-    smoothstep(0.05, 0.32, glow) * (1.0 - smoothstep(0.28, 0.82, body));
-  float rimDots = max(rim * 1.15, edgeBand) * bead;
+    smoothstep(0.02, 0.42, glow) * (1.0 - smoothstep(0.18, 0.88, body));
+  float rimDots = max(rim * 1.2, edgeBand) * bead;
   col = mix(col, vec3(1.0, 0.99, 0.96), clamp(rimDots, 0.0, 1.0));
 
   return col;
