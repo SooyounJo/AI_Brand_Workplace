@@ -3,7 +3,6 @@ import { useCallback, useEffect, useState } from "react";
 import BoardRail from "@/components/workspace/BoardRail";
 import BrandCanvas, { DEFAULT_ZONES } from "@/components/workspace/BrandCanvas";
 import EgoBoard from "@/components/workspace/EgoBoard";
-import IdeationTray from "@/components/workspace/IdeationTray";
 import { getProject } from "@/data/projects";
 
 const GRID = 18;
@@ -122,51 +121,6 @@ export default function Workspace({ slug, initialProject = null }) {
       setView("brand");
     }, 650);
   }, [generating, prompt, slug, zones, activeZoneId]);
-
-  const onPlaceTag = useCallback(
-    (tag) => {
-      const active = zones.find((z) => z.id === activeZoneId);
-      const prefer =
-        (active &&
-        (active.id === "ideation" ||
-          active.id === "essentials" ||
-          active.id === "main")
-          ? active
-          : null) ||
-        zones.find((z) => z.id === "main") ||
-        zones.find((z) => z.id === "ideation") ||
-        zones.find((z) => z.id === "essentials") ||
-        zones[0];
-      if (!prefer) return;
-
-      setExtraNodes((prev) => {
-        const placed = prev.filter((n) => n.kind === "card").length;
-        const col = placed % 2;
-        const row = Math.floor(placed / 2);
-        const maxRow = Math.max(0, Math.floor((prefer.h - 180) / 150));
-        const useRow = Math.min(row, maxRow);
-        return [
-          ...prev,
-          {
-            id: `tag-${tag.optionId}-${Date.now()}`,
-            kind: "card",
-            title: tag.title,
-            body: tag.body,
-            categoryId: tag.categoryId,
-            x: snap(prefer.x + 36 + col * 310),
-            y: snap(prefer.y + 48 + useRow * 150),
-            w: 290,
-            h: 132,
-            fresh: true,
-          },
-        ];
-      });
-      setActiveZoneId(prefer.id);
-      setFocusZoneId(`${prefer.id}:${Date.now()}`);
-      setView("brand");
-    },
-    [zones, activeZoneId]
-  );
 
   const onSelectBoard = useCallback((id) => {
     setActiveZoneId(id);
@@ -315,7 +269,6 @@ export default function Workspace({ slug, initialProject = null }) {
           <EgoBoard project={project} />
         )}
 
-        <IdeationTray onPlace={onPlaceTag} disabled={view !== "brand"} />
       </div>
 
       <footer className="ws-chat">
