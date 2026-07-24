@@ -11,7 +11,7 @@ function snap(n) {
   return Math.round(n / GRID) * GRID;
 }
 
-function overlaps(a, b, gap = 48) {
+function overlaps(a, b, gap = 80) {
   return !(
     a.x + a.w + gap <= b.x ||
     b.x + b.w + gap <= a.x ||
@@ -191,7 +191,12 @@ export default function Workspace({ slug, initialProject = null }) {
           Home
         </Link>
 
-        <div className="ws-seg" role="tablist" aria-label="Board view">
+        <div
+          className="ws-seg"
+          role="tablist"
+          aria-label="Board view"
+          data-active={view}
+        >
           <button
             type="button"
             role="tab"

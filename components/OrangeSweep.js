@@ -19,10 +19,12 @@ export default function OrangeSweep() {
       className={`orange-sweep${boardLoading ? " is-active" : ""}`}
       aria-hidden={!boardLoading}
       aria-busy={boardLoading}
+      aria-label={boardLoading ? "Loading" : undefined}
+      role={boardLoading ? "status" : undefined}
     >
       <div className="orange-sweep__base" />
+      <div className="orange-sweep__glow" aria-hidden="true" />
       <div className="orange-sweep__grid" aria-hidden="true" />
-      <div className="orange-sweep__grid orange-sweep__grid--wave" aria-hidden="true" />
 
       <div className="orange-sweep__swirl" aria-hidden="true">
         {pills.map((pill) => (
@@ -38,8 +40,6 @@ export default function OrangeSweep() {
           </div>
         ))}
       </div>
-
-      <p className="orange-sweep__label">Loading</p>
     </div>
   );
 }

@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-const MIN_ZOOM = 0.18;
+const MIN_ZOOM = 0.2;
 const MAX_ZOOM = 2.4;
 const WORLD_W = 3200;
 const WORLD_H = 1180;
 const GRID = 18;
-const DRAG_THRESHOLD = 4;
+const DRAG_THRESHOLD = 3;
+const ZOOM_STEP = 0.05;
+const ZOOM_BTN_STEP = 0.1;
+const WHEEL_ZOOM_PIXELS = 48;
 
 const ASPECT_PRESETS = [
   { id: "1:1", ratio: 1, label: "1:1" },
@@ -94,8 +97,38 @@ function clamp(n, min, max) {
   return Math.min(max, Math.max(min, n));
 }
 
+function formatAiModel(tag) {
+  const raw = String(tag || "").replace(/^#/, "").trim();
+  if (!raw) return "";
+  const map = {
+    nanobanana: "NanoBanana",
+    midjourney: "Midjourney",
+    chatgpt: "ChatGPT",
+    claude: "Claude",
+    flux: "Flux",
+    ideogram: "Ideogram",
+    soul2: "Soul2",
+    soul: "Soul",
+  };
+  const key = raw.toLowerCase();
+  if (map[key]) return map[key];
+  return raw;
+}
+
 function snap(n) {
   return Math.round(n / GRID) * GRID;
+}
+
+function snapZoom(z) {
+  const stepped = Math.round(z / ZOOM_STEP) * ZOOM_STEP;
+  return clamp(Number(stepped.toFixed(2)), MIN_ZOOM, MAX_ZOOM);
+}
+
+function normalizeWheelDelta(e) {
+  let dy = e.deltaY;
+  if (e.deltaMode === 1) dy *= 16;
+  if (e.deltaMode === 2) dy *= window.innerHeight || 800;
+  return dy;
 }
 
 function center(node) {
@@ -115,6 +148,8 @@ const GROUP_TO_ZONE = {
 };
 
 const ZONE_PAD = 40;
+/** Minimum clear space between board rects (titles sit in this gutter). */
+const ZONE_GAP = 80;
 
 function resolveZoneId(node, zones) {
   if (node.group) {
@@ -189,6 +224,136 @@ function expandZoneToFit(zones, zoneId, nodes, pad = ZONE_PAD, forceIds = null) 
   });
 }
 
+function zoneHitBox(z) {
+  return { x: z.x, y: z.y, w: z.w, h: z.h };
+}
+
+function rectsOverlap(a, b, gap) {
+  return !(
+    a.x + a.w + gap <= b.x ||
+    b.x + b.w + gap <= a.x ||
+    a.y + a.h + gap <= b.y ||
+    b.y + b.h + gap <= a.y
+  );
+}
+
+function isZoneAnchor(z) {
+  return z.id === "main-flow" || z.tone === "flow" || z.id === "essentials";
+}
+
+/** Smallest translation that moves `moving` clear of `blocker` by `gap`. */
+function minPushAway(blocker, moving, gap) {
+  const a = zoneHitBox(blocker);
+  const b = zoneHitBox(moving);
+  if (!rectsOverlap(a, b, gap)) return null;
+
+  const pushDown = a.y + a.h + gap - b.y;
+  const pushRight = a.x + a.w + gap - b.x;
+  const pushUp = a.y - (b.y + b.h + gap);
+  const pushLeft = a.x - (b.x + b.w + gap);
+
+  const xOverlap =
+    Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+  const yOverlap =
+    Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+
+  const opts = [];
+  if (pushDown > 0) opts.push({ dx: 0, dy: pushDown, score: pushDown });
+  if (pushRight > 0) opts.push({ dx: pushRight, dy: 0, score: pushRight });
+  if (pushUp < 0) opts.push({ dx: 0, dy: pushUp, score: -pushUp });
+  if (pushLeft < 0) opts.push({ dx: pushLeft, dy: 0, score: -pushLeft });
+  if (!opts.length) return { dx: 0, dy: Math.max(pushDown, gap) };
+
+  // Prefer vertical when boards share a column; horizontal when side-by-side.
+  opts.sort((p, q) => {
+    const pVert = p.dx === 0 ? 0 : 1;
+    const qVert = q.dx === 0 ? 0 : 1;
+    if (xOverlap > yOverlap) {
+      if (pVert !== qVert) return pVert - qVert;
+    } else if (yOverlap > xOverlap) {
+      if (pVert !== qVert) return qVert - pVert;
+    }
+    return p.score - q.score;
+  });
+  return { dx: opts[0].dx, dy: opts[0].dy };
+}
+
+/**
+ * Keep every board at least ZONE_GAP apart (never overlap).
+ * Moves later / non-anchor boards; member cards shift with their board.
+ * `preferId` = board that just grew — others yield to it.
+ */
+function enforceZoneGaps(zones, nodes, preferId = null, gap = ZONE_GAP) {
+  if (!zones?.length) {
+    return { zones, nodes, changed: false };
+  }
+
+  const next = zones.map((z) => ({ ...z }));
+  const origin = Object.fromEntries(
+    zones.map((z) => [z.id, { x: z.x, y: z.y }])
+  );
+
+  for (let pass = 0; pass < 20; pass += 1) {
+    let moved = false;
+    const ranked = next
+      .map((z, i) => ({ z, i }))
+      .sort((a, b) => a.z.y - b.z.y || a.z.x - b.z.x);
+
+    for (let i = 0; i < ranked.length; i += 1) {
+      for (let j = i + 1; j < ranked.length; j += 1) {
+        const A = next[ranked[i].i];
+        const B = next[ranked[j].i];
+        if (!rectsOverlap(zoneHitBox(A), zoneHitBox(B), gap)) continue;
+
+        let moveB = true;
+        if (preferId === B.id && preferId !== A.id) moveB = false;
+        else if (preferId === A.id) moveB = true;
+        else if (isZoneAnchor(B) && !isZoneAnchor(A)) moveB = false;
+        else if (isZoneAnchor(A) && !isZoneAnchor(B)) moveB = true;
+
+        const blocker = moveB ? A : B;
+        const target = moveB ? B : A;
+        const push = minPushAway(blocker, target, gap);
+        if (!push || (push.dx === 0 && push.dy === 0)) continue;
+        target.x = snap(target.x + push.dx);
+        target.y = snap(target.y + push.dy);
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+
+  const deltas = {};
+  for (const z of next) {
+    const o = origin[z.id];
+    const dx = z.x - o.x;
+    const dy = z.y - o.y;
+    if (dx || dy) deltas[z.id] = { dx, dy };
+  }
+
+  const zonesMoved = Object.keys(deltas).length > 0;
+  const zonesResized = next.some(
+    (z, i) =>
+      z.w !== zones[i]?.w ||
+      z.h !== zones[i]?.h ||
+      z.x !== zones[i]?.x ||
+      z.y !== zones[i]?.y
+  );
+
+  if (!zonesMoved) {
+    return { zones: next, nodes, changed: zonesResized };
+  }
+
+  const nextNodes = nodes.map((n) => {
+    const zid = resolveZoneId(n, next);
+    const d = zid ? deltas[zid] : null;
+    if (!d) return n;
+    return { ...n, x: n.x + d.dx, y: n.y + d.dy };
+  });
+
+  return { zones: next, nodes: nextNodes, changed: true };
+}
+
 function portPoint(node, side) {
   const h = node.h || 80;
   const w = node.w || 200;
@@ -198,38 +363,36 @@ function portPoint(node, side) {
   };
 }
 
+function cubicPortPath(p1, p2, dir1, dir2) {
+  const pull = Math.max(
+    48,
+    Math.min(160, Math.abs(p2.x - p1.x) * 0.45 + Math.abs(p2.y - p1.y) * 0.28)
+  );
+  return `M ${p1.x} ${p1.y} C ${p1.x + pull * dir1} ${p1.y}, ${p2.x + pull * dir2} ${p2.y}, ${p2.x} ${p2.y}`;
+}
+
+/** Directed spine segment: always previous OUT → next IN. */
+function directedEdgePath(a, b) {
+  return cubicPortPath(portPoint(a, "out"), portPoint(b, "in"), 1, -1);
+}
+
+/** Always attach wires to left/right ports (never card center / top-bottom). */
 function edgePath(a, b) {
-  const usePorts = a.kind === "idea" || b.kind === "idea" || a.flow || b.flow;
-  const p1 = usePorts ? portPoint(a, "out") : center(a);
-  const p2 = usePorts ? portPoint(b, "in") : center(b);
-  const midX = (p1.x + p2.x) / 2;
-  return `M ${p1.x} ${p1.y} C ${midX} ${p1.y}, ${midX} ${p2.y}, ${p2.x} ${p2.y}`;
-}
-
-function mainlinePoint(node, index, total) {
-  if (!node) return null;
-  if (node.kind === "idea" || node.flow) {
-    if (index === 0) return portPoint(node, "out");
-    if (index === total - 1) return portPoint(node, "in");
-    return center(node);
+  const ca = center(a);
+  const cb = center(b);
+  if (cb.x >= ca.x) {
+    return directedEdgePath(a, b);
   }
-  return center(node);
+  return cubicPortPath(portPoint(a, "in"), portPoint(b, "out"), -1, 1);
 }
 
+/** Orange mainline: consecutive OUT→IN segments (ports stay attached). */
 function buildMainlinePath(nodesInOrder) {
-  const pts = nodesInOrder
-    .map((n, i) => mainlinePoint(n, i, nodesInOrder.length))
-    .filter(Boolean);
-  if (pts.length < 2) return "";
-  let d = `M ${pts[0].x} ${pts[0].y}`;
-  for (let i = 0; i < pts.length - 1; i += 1) {
-    const a = pts[i];
-    const b = pts[i + 1];
-    const dx = Math.max(48, Math.abs(b.x - a.x) * 0.42);
-    const sign = b.x >= a.x ? 1 : -1;
-    d += ` C ${a.x + dx * sign} ${a.y}, ${b.x - dx * sign} ${b.y}, ${b.x} ${b.y}`;
-  }
-  return d;
+  if (nodesInOrder.length < 2) return "";
+  return nodesInOrder
+    .slice(0, -1)
+    .map((n, i) => directedEdgePath(n, nodesInOrder[i + 1]))
+    .join(" ");
 }
 
 function buildNodes(board, extraNodes) {
@@ -471,21 +634,40 @@ export default function BrandCanvas({
   const [draft, setDraft] = useState({});
   const [linkEdges, setLinkEdges] = useState([]);
   const [linkFrom, setLinkFrom] = useState(null);
+  const [editingZoneId, setEditingZoneId] = useState(null);
+  const [zoneTitleDraft, setZoneTitleDraft] = useState("");
   const dragRef = useRef(null);
   const nodeDragRef = useRef(null);
   const zoomRef = useRef(zoom);
+  const panRef = useRef(pan);
   const zonesRef = useRef(zones);
+  const wheelAccRef = useRef(0);
+  const moveRafRef = useRef(0);
+  const pendingMoveRef = useRef(null);
+  const spacePanRef = useRef(false);
 
   zoomRef.current = zoom;
+  panRef.current = pan;
   zonesRef.current = zones;
 
   useEffect(() => {
-    setNodes(buildNodes(board, extraNodes));
+    const built = buildNodes(board, extraNodes);
     setLinkEdges([...(board.connections || [])]);
     setLinkFrom(null);
     setSelectedId(null);
     setEditingId(null);
-  }, [project?.slug, board, extraNodes]);
+
+    if (onZonesChange && zonesRef.current?.length) {
+      const enforced = enforceZoneGaps(zonesRef.current, built, null);
+      if (enforced.changed) {
+        zonesRef.current = enforced.zones;
+        onZonesChange(enforced.zones);
+        setNodes(enforced.nodes);
+        return;
+      }
+    }
+    setNodes(built);
+  }, [project?.slug, board, extraNodes, onZonesChange]);
 
   useEffect(() => {
     if (!focusZoneId) return;
@@ -601,7 +783,7 @@ export default function BrandCanvas({
           id: `${from}-${to}-${i}`,
           from,
           to,
-          d: edgePath(a, b),
+          d: isMainlineSeg ? directedEdgePath(a, b) : edgePath(a, b),
           accent: isMainlineSeg || spineTouch || touchesMain || ideaToIdea,
           mainline: isMainlineSeg,
         };
@@ -677,6 +859,34 @@ export default function BrandCanvas({
     setEditingId(null);
   }, []);
 
+  const beginZoneTitleEdit = useCallback((zone, e) => {
+    e?.stopPropagation();
+    e?.preventDefault();
+    setEditingId(null);
+    setSelectedId(null);
+    setEditingZoneId(zone.id);
+    setZoneTitleDraft(zone.title || "");
+  }, []);
+
+  const cancelZoneTitleEdit = useCallback(() => {
+    setEditingZoneId(null);
+    setZoneTitleDraft("");
+  }, []);
+
+  const saveZoneTitleEdit = useCallback(() => {
+    if (!editingZoneId || !onZonesChange) {
+      cancelZoneTitleEdit();
+      return;
+    }
+    const nextTitle = zoneTitleDraft.trim() || "Untitled";
+    const fitted = zonesRef.current.map((z) =>
+      z.id === editingZoneId ? { ...z, title: nextTitle } : z
+    );
+    zonesRef.current = fitted;
+    onZonesChange(fitted);
+    cancelZoneTitleEdit();
+  }, [editingZoneId, zoneTitleDraft, onZonesChange, cancelZoneTitleEdit]);
+
   const applyAspect = useCallback((id, aspectId) => {
     setNodes((prev) =>
       prev.map((n) => {
@@ -727,6 +937,13 @@ export default function BrandCanvas({
         }
         return;
       }
+      if (editingZoneId) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          cancelZoneTitleEdit();
+        }
+        return;
+      }
       if (!selectedId) return;
       if (e.key === "Delete" || e.key === "Backspace") {
         const tag = e.target?.tagName;
@@ -742,7 +959,43 @@ export default function BrandCanvas({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedId, editingId, deleteNode, openEdit, cancelEdit, nodeMap]);
+  }, [selectedId, editingId, editingZoneId, deleteNode, openEdit, cancelEdit, cancelZoneTitleEdit, nodeMap]);
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.code !== "Space" || e.repeat) return;
+      const tag = e.target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      e.preventDefault();
+      spacePanRef.current = true;
+    };
+    const onKeyUp = (e) => {
+      if (e.code === "Space") spacePanRef.current = false;
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+  }, []);
+
+  const applyZoomAt = useCallback((nextZoom, anchorX, anchorY) => {
+    const prevZoom = zoomRef.current;
+    const z = snapZoom(nextZoom);
+    if (z === prevZoom) return;
+    const prevPan = panRef.current;
+    const worldX = (anchorX - prevPan.x) / prevZoom;
+    const worldY = (anchorY - prevPan.y) / prevZoom;
+    const nextPan = {
+      x: anchorX - worldX * z,
+      y: anchorY - worldY * z,
+    };
+    zoomRef.current = z;
+    panRef.current = nextPan;
+    setZoom(z);
+    setPan(nextPan);
+  }, []);
 
   useEffect(() => {
     const el = viewportRef.current;
@@ -751,33 +1004,100 @@ export default function BrandCanvas({
     const onWheel = (e) => {
       e.preventDefault();
       const rect = el.getBoundingClientRect();
-      const mx = e.clientX - rect.left;
-      const my = e.clientY - rect.top;
-      const factor = e.deltaY > 0 ? 0.9 : 1.1;
-      setZoom((prevZoom) => {
-        const nextZoom = clamp(prevZoom * factor, MIN_ZOOM, MAX_ZOOM);
-        setPan((prevPan) => {
-          const worldX = (mx - prevPan.x) / prevZoom;
-          const worldY = (my - prevPan.y) / prevZoom;
-          return {
-            x: mx - worldX * nextZoom,
-            y: my - worldY * nextZoom,
-          };
-        });
-        return nextZoom;
-      });
+
+      // Scroll / trackpad → pan. Pinch or Ctrl/Meta+wheel → zoom at viewport center.
+      const zoomGesture = e.ctrlKey || e.metaKey;
+      if (!zoomGesture) {
+        const nextPan = {
+          x: panRef.current.x - e.deltaX,
+          y: panRef.current.y - e.deltaY,
+        };
+        panRef.current = nextPan;
+        setPan(nextPan);
+        return;
+      }
+
+      const mx = rect.width / 2;
+      const my = rect.height / 2;
+
+      wheelAccRef.current += normalizeWheelDelta(e);
+      let steps = 0;
+      while (wheelAccRef.current <= -WHEEL_ZOOM_PIXELS) {
+        wheelAccRef.current += WHEEL_ZOOM_PIXELS;
+        steps += 1;
+      }
+      while (wheelAccRef.current >= WHEEL_ZOOM_PIXELS) {
+        wheelAccRef.current -= WHEEL_ZOOM_PIXELS;
+        steps -= 1;
+      }
+      if (!steps) return;
+
+      applyZoomAt(zoomRef.current + steps * ZOOM_STEP, mx, my);
     };
 
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
+  }, [applyZoomAt]);
+
+  const flushPendingMove = useCallback(() => {
+    moveRafRef.current = 0;
+    const pending = pendingMoveRef.current;
+    pendingMoveRef.current = null;
+    if (!pending) return;
+
+    if (pending.type === "node") {
+      setNodes((prev) =>
+        prev.map((n) =>
+          n.id === pending.id ? { ...n, x: pending.x, y: pending.y } : n
+        )
+      );
+      return;
+    }
+
+    if (pending.type === "pan") {
+      panRef.current = { x: pending.x, y: pending.y };
+      setPan({ x: pending.x, y: pending.y });
+    }
   }, []);
 
+  const scheduleMove = useCallback(
+    (payload) => {
+      pendingMoveRef.current = payload;
+      if (moveRafRef.current) return;
+      moveRafRef.current = requestAnimationFrame(flushPendingMove);
+    },
+    [flushPendingMove]
+  );
+
+  const startPan = (e, captureEl) => {
+    setSelectedId(null);
+    nodeDragRef.current = null;
+    setDraggingNode(false);
+    dragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      panX: panRef.current.x,
+      panY: panRef.current.y,
+    };
+    setDragging(true);
+    (captureEl || e.currentTarget).setPointerCapture?.(e.pointerId);
+  };
+
   const onNodePointerDown = (e, node) => {
-    if (e.button !== 0) return;
     if (e.target.closest(".bc-node__tools")) return;
     if (e.target.closest(".bc-inline")) return;
     if (e.target.closest(".bc-port")) return;
     if (editingId === node.id) return;
+
+    // Middle / right / Space → pan canvas (titles & cards never trap navigation)
+    if (e.button === 1 || e.button === 2 || spacePanRef.current) {
+      e.stopPropagation();
+      e.preventDefault();
+      startPan(e, e.currentTarget);
+      return;
+    }
+    if (e.button !== 0) return;
+
     e.stopPropagation();
     e.preventDefault();
     setSelectedId(node.id);
@@ -796,17 +1116,21 @@ export default function BrandCanvas({
   };
 
   const onPointerDown = (e) => {
+    if (e.button === 1 || e.button === 2 || spacePanRef.current) {
+      e.preventDefault();
+      startPan(e, e.currentTarget);
+      return;
+    }
     if (e.button !== 0) return;
-    if (e.target.closest(".bc-node") || e.target.closest(".bc-editor")) return;
-    setSelectedId(null);
-    dragRef.current = {
-      startX: e.clientX,
-      startY: e.clientY,
-      panX: pan.x,
-      panY: pan.y,
-    };
-    setDragging(true);
-    e.currentTarget.setPointerCapture(e.pointerId);
+    if (
+      e.target.closest(".bc-node") ||
+      e.target.closest(".bc-editor") ||
+      e.target.closest(".bc-board__title") ||
+      e.target.closest(".bc-board__title-input")
+    ) {
+      return;
+    }
+    startPan(e, e.currentTarget);
   };
 
   const onPointerMove = (e) => {
@@ -818,66 +1142,50 @@ export default function BrandCanvas({
         d.moved = true;
       }
       if (!d.moved) return;
-      const dx = rawDx / d.zoom;
-      const dy = rawDy / d.zoom;
-      const nextX = snap(d.originX + dx);
-      const nextY = snap(d.originY + dy);
-      setNodes((prev) => {
-        const next = prev.map((n) =>
-          n.id === d.id ? { ...n, x: nextX, y: nextY } : n
-        );
-        if (onZonesChange && d.zoneId) {
-          const fitted = expandZoneToFit(
-            zonesRef.current,
-            d.zoneId,
-            next,
-            ZONE_PAD,
-            [d.id]
-          );
-          if (fitted !== zonesRef.current) {
-            const changed = fitted.some(
-              (z, i) =>
-                z.x !== zonesRef.current[i]?.x ||
-                z.y !== zonesRef.current[i]?.y ||
-                z.w !== zonesRef.current[i]?.w ||
-                z.h !== zonesRef.current[i]?.h
-            );
-            if (changed) {
-              zonesRef.current = fitted;
-              onZonesChange(fitted);
-            }
-          }
-        }
-        return next;
+      scheduleMove({
+        type: "node",
+        id: d.id,
+        x: d.originX + rawDx / d.zoom,
+        y: d.originY + rawDy / d.zoom,
       });
       return;
     }
 
     if (!dragRef.current) return;
-    const dx = e.clientX - dragRef.current.startX;
-    const dy = e.clientY - dragRef.current.startY;
-    setPan({
-      x: dragRef.current.panX + dx,
-      y: dragRef.current.panY + dy,
+    scheduleMove({
+      type: "pan",
+      x: dragRef.current.panX + (e.clientX - dragRef.current.startX),
+      y: dragRef.current.panY + (e.clientY - dragRef.current.startY),
     });
   };
 
   const onPointerUp = (e) => {
+    if (moveRafRef.current) {
+      cancelAnimationFrame(moveRafRef.current);
+      moveRafRef.current = 0;
+    }
+    if (pendingMoveRef.current) {
+      flushPendingMove();
+    }
+
     if (nodeDragRef.current) {
       const d = nodeDragRef.current;
       if (d.moved) {
         setNodes((prev) => {
-          const next = prev.map((n) =>
+          let next = prev.map((n) =>
             n.id === d.id ? { ...n, x: snap(n.x), y: snap(n.y) } : n
           );
           if (onZonesChange && d.zoneId) {
-            const fitted = expandZoneToFit(
+            let fitted = expandZoneToFit(
               zonesRef.current,
               d.zoneId,
               next,
               ZONE_PAD,
               [d.id]
             );
+            const enforced = enforceZoneGaps(fitted, next, d.zoneId);
+            fitted = enforced.zones;
+            next = enforced.nodes;
             const changed = fitted.some(
               (z, i) =>
                 z.x !== zonesRef.current[i]?.x ||
@@ -912,24 +1220,15 @@ export default function BrandCanvas({
     }
   };
 
-  const zoomBy = (factor) => {
+  const zoomBy = (dir) => {
     const el = viewportRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    const mx = rect.width / 2;
-    const my = rect.height / 2;
-    setZoom((prevZoom) => {
-      const nextZoom = clamp(prevZoom * factor, MIN_ZOOM, MAX_ZOOM);
-      setPan((prevPan) => {
-        const worldX = (mx - prevPan.x) / prevZoom;
-        const worldY = (my - prevPan.y) / prevZoom;
-        return {
-          x: mx - worldX * nextZoom,
-          y: my - worldY * nextZoom,
-        };
-      });
-      return nextZoom;
-    });
+    applyZoomAt(
+      zoomRef.current + dir * ZOOM_BTN_STEP,
+      rect.width / 2,
+      rect.height / 2
+    );
   };
 
   const worldW = useMemo(() => {
@@ -1014,16 +1313,59 @@ export default function BrandCanvas({
       inlineEditing ? " is-editing" : ""
     }`;
 
+    const linking = linkFrom === node.id;
+    const ports = (
+      <>
+        <button
+          type="button"
+          className="bc-port bc-port--in"
+          aria-label="연결 받기 / 입력 연결 해제"
+          title={linkFrom ? "여기에 연결" : "입력 연결 해제"}
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            if (linkFrom) {
+              completeLink(node.id, e);
+            } else {
+              clearSideLinks(node.id, "in", e);
+            }
+          }}
+        />
+        <button
+          type="button"
+          className={`bc-port bc-port--out${linking ? " is-active" : ""}`}
+          aria-label="연결 시작"
+          title={linking ? "연결 취소" : "오른쪽 원 → 다른 노드 왼쪽 원으로 연결"}
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            if (linkFrom && linkFrom !== node.id) {
+              completeLink(node.id, e);
+              return;
+            }
+            if (linking) {
+              setLinkFrom(null);
+              return;
+            }
+            startLink(node.id, e);
+          }}
+        />
+      </>
+    );
+
     if (node.kind === "card") {
       const accent = node.accent ? ` bc-card--${node.accent}` : "";
       return (
         <article
           key={node.id}
           id={node.id}
-          className={`${cls} bc-card${accent}${node.fresh ? " is-fresh" : ""}`}
+          className={`${cls} bc-card${accent}${node.fresh ? " is-fresh" : ""}${
+            linking ? " is-linking" : ""
+          }`}
           style={style}
           {...dragProps}
         >
+          {ports}
           {tools}
           {inlineEditing ? (
             <div className="bc-inline">
@@ -1078,10 +1420,11 @@ export default function BrandCanvas({
           id={node.id}
           className={`${cls} bc-typo${node.recommended ? " bc-typo--recommended" : ""}${
             node.egoFlag ? " bc-typo--ego-warn" : ""
-          }${node.fresh ? " is-fresh" : ""}`}
+          }${node.fresh ? " is-fresh" : ""}${linking ? " is-linking" : ""}`}
           style={style}
           {...dragProps}
         >
+          {ports}
           {tools}
           {!inlineEditing ? <AuthorBadge name={node.author} /> : null}
           {node.recommended ? (
@@ -1114,7 +1457,6 @@ export default function BrandCanvas({
     if (node.kind === "idea") {
       const isFlow = Boolean(node.flow);
       const inactive = isFlow && !connectedIds.has(node.id) && !node.egoFlag;
-      const linking = linkFrom === node.id;
       return (
         <article
           key={node.id}
@@ -1125,47 +1467,10 @@ export default function BrandCanvas({
           style={style}
           {...dragProps}
         >
+          {ports}
           {tools}
           {node.egoFlag ? <span className="bc-idea__ego-tag">Ego</span> : null}
           {!inlineEditing ? <AuthorBadge name={node.author} /> : null}
-          {isFlow ? (
-            <>
-              <button
-                type="button"
-                className="bc-port bc-port--in"
-                aria-label="연결 받기 / 입력 연결 해제"
-                title={linkFrom ? "여기에 연결" : "입력 연결 해제"}
-                onPointerDown={(e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                  if (linkFrom) {
-                    completeLink(node.id, e);
-                  } else {
-                    clearSideLinks(node.id, "in", e);
-                  }
-                }}
-              />
-              <button
-                type="button"
-                className={`bc-port bc-port--out${linking ? " is-active" : ""}`}
-                aria-label="연결 시작"
-                title={linking ? "연결 취소" : "오른쪽 원 → 다른 카드 왼쪽 원으로 연결"}
-                onPointerDown={(e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                  if (linkFrom && linkFrom !== node.id) {
-                    completeLink(node.id, e);
-                    return;
-                  }
-                  if (linking) {
-                    setLinkFrom(null);
-                    return;
-                  }
-                  startLink(node.id, e);
-                }}
-              />
-            </>
-          ) : null}
           {inlineEditing ? (
             <div className="bc-inline">
               <textarea
@@ -1218,10 +1523,11 @@ export default function BrandCanvas({
         <aside
           key={node.id}
           id={node.id}
-          className={`${cls} bc-comment${warn}`}
+          className={`${cls} bc-comment${warn}${linking ? " is-linking" : ""}`}
           style={style}
           {...dragProps}
         >
+          {ports}
           {tools}
           {!inlineEditing ? (
             <AuthorBadge
@@ -1284,12 +1590,13 @@ export default function BrandCanvas({
             node.egoFlag ? " bc-image--ego-warn" : ""
           }${node.fresh ? " is-fresh" : ""}${
             node.fit === "contain" ? " bc-image--contain" : ""
-          }`}
+          }${linking ? " is-linking" : ""}`}
           data-aspect={node.aspect || "fill"}
           data-fit={node.fit || "cover"}
           style={style}
           {...dragProps}
         >
+          {ports}
           {tools}
           {node.egoFlag ? <span className="bc-image__ego-tag">Ego</span> : null}
           <BoardImage src={node.src} alt={node.alt || ""} />
@@ -1300,12 +1607,21 @@ export default function BrandCanvas({
       <figure
         key={node.id}
         id={node.id}
-        className={`${cls} bc-output bc-image--framed`}
+        className={`${cls} bc-output bc-image--framed${
+          node.egoFlag ? " bc-image--ego-warn" : ""
+        }${node.fit === "contain" ? " bc-image--contain" : ""}${
+          linking ? " is-linking" : ""
+        }`}
         data-aspect={node.aspect || "fill"}
+        data-fit={node.fit || "cover"}
         style={style}
         {...dragProps}
       >
+        {ports}
         {tools}
+        {node.egoFlag ? (
+          <span className="bc-image__ego-tag">부적합</span>
+        ) : null}
         <BoardImage src={node.src} alt={node.alt || node.label} />
         <figcaption>{node.label}</figcaption>
       </figure>
@@ -1322,6 +1638,9 @@ export default function BrandCanvas({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
+      onContextMenu={(e) => {
+        if (dragging || dragRef.current) e.preventDefault();
+      }}
     >
       <div className="brand-canvas__grid" aria-hidden="true" />
 
@@ -1335,29 +1654,61 @@ export default function BrandCanvas({
       >
         {zones.map((zone, index) => {
           const isBookend = index === 0 || index === zones.length - 1;
+          const isAiChrome =
+            zone.tone === "flow" ||
+            zone.tone === "base" ||
+            zone.tone === "main";
+          const labelTop = isAiChrome ? zone.y + 12 : zone.y - 28;
+          const labelLeft = isAiChrome ? zone.x + 16 : zone.x;
           return (
             <div
               key={zone.id}
               className={`bc-board-wrap${activeZoneId === zone.id ? " is-active" : ""}${
                 isBookend ? " is-bookend" : ""
-              }${zone.tone === "flow" ? " is-flow" : ""}`}
+              }${zone.tone === "flow" ? " is-flow" : ""}${
+                isAiChrome ? " is-ai-chrome" : ""
+              }`}
             >
               <div
-                className="bc-board__label"
+                className={`bc-board__label${isAiChrome ? " bc-board__label--inset" : ""}`}
                 style={{
-                  left: zone.x,
-                  top: zone.y - 28,
-                  width: zone.w,
+                  left: labelLeft,
+                  top: labelTop,
+                  transform: `scale(${1 / zoom})`,
+                  transformOrigin: isAiChrome ? "left top" : "left bottom",
                 }}
               >
-                <p className="bc-board__title">{zone.title}</p>
-                {zone.aiModels?.length ? (
-                  <p className="bc-board__ai" aria-label="AI models used">
-                    {zone.aiModels.map((tag) => (
-                      <span key={tag}>{tag}</span>
-                    ))}
+                {editingZoneId === zone.id ? (
+                  <input
+                    className="bc-board__title-input"
+                    value={zoneTitleDraft}
+                    autoFocus
+                    aria-label="Board title"
+                    onChange={(e) => setZoneTitleDraft(e.target.value)}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => {
+                      e.stopPropagation();
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        saveZoneTitleEdit();
+                      }
+                      if (e.key === "Escape") {
+                        e.preventDefault();
+                        cancelZoneTitleEdit();
+                      }
+                    }}
+                    onBlur={saveZoneTitleEdit}
+                  />
+                ) : (
+                  <p
+                    className="bc-board__title"
+                    title="더블클릭하여 제목 수정"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onDoubleClick={(e) => beginZoneTitleEdit(zone, e)}
+                  >
+                    {zone.title}
                   </p>
-                ) : null}
+                )}
               </div>
               <section
                 className={`bc-board bc-board--${zone.tone}${
@@ -1369,7 +1720,17 @@ export default function BrandCanvas({
                   width: zone.w,
                   height: zone.h,
                 }}
-              />
+              >
+                {zone.aiModels?.length ? (
+                  <div className="bc-board__ai-pills" aria-label="AI models used">
+                    {zone.aiModels.map((tag) => (
+                      <span key={tag} className="bc-board__ai-pill">
+                        {formatAiModel(tag)}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </section>
             </div>
           );
         })}
@@ -1392,17 +1753,16 @@ export default function BrandCanvas({
                 fill="none"
                 onPointerDown={(e) => removeEdge(edge.from, edge.to, e)}
               />
-              <path
-                d={edge.d}
-                className={`brand-canvas__wire${
-                  edge.mainline
-                    ? " brand-canvas__wire--mainline-seg"
-                    : edge.accent
-                      ? " brand-canvas__wire--accent"
-                      : ""
-                }`}
-                fill="none"
-              />
+              {/* Continuous orange mainlinePath already draws spine — skip duplicate seg stroke */}
+              {!edge.mainline ? (
+                <path
+                  d={edge.d}
+                  className={`brand-canvas__wire${
+                    edge.accent ? " brand-canvas__wire--accent" : ""
+                  }`}
+                  fill="none"
+                />
+              ) : null}
             </g>
           ))}
           {mainlinePath ? (
@@ -1426,11 +1786,11 @@ export default function BrandCanvas({
       </div>
 
       <div className="brand-canvas__zoom">
-        <button type="button" onClick={() => zoomBy(1.12)} aria-label="Zoom in">
+        <button type="button" onClick={() => zoomBy(1)} aria-label="Zoom in">
           +
         </button>
         <span>{Math.round(zoom * 100)}%</span>
-        <button type="button" onClick={() => zoomBy(0.88)} aria-label="Zoom out">
+        <button type="button" onClick={() => zoomBy(-1)} aria-label="Zoom out">
           −
         </button>
       </div>

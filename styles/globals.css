@@ -280,25 +280,28 @@ a {
   position: absolute;
   left: var(--page-edge);
   right: calc(var(--page-edge) + var(--rail-w));
-  bottom: clamp(1.25rem, 3vh, 2rem);
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 1rem;
   pointer-events: none;
 }
 
-.site-footer__left {
-  flex-shrink: 0;
+.site-footer--bottom {
+  bottom: clamp(1.25rem, 3vh, 2rem);
 }
 
-.site-footer__share {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
+.site-footer--top {
+  top: clamp(1.25rem, 3vh, 2rem);
 }
 
+.site-footer__left,
+.site-footer__share,
 .site-footer__inspire {
-  margin-left: auto;
+  flex: 0 0 auto;
+  position: static;
+  transform: none;
+  margin: 0;
 }
 
 .site-footer span {
@@ -307,6 +310,7 @@ a {
   font-weight: 300;
   letter-spacing: 0.12em;
   color: rgba(255, 255, 255, 0.55);
+  white-space: nowrap;
 }
 
 .left-rail {
@@ -1005,7 +1009,7 @@ a {
   color: rgba(255, 255, 255, 0.82);
 }
 
-/* Loader — soft stone bg + undulating dot grid + orange swirl */
+/* Loader — Figma 1940:19908 · stone field + soft bottom glow + glass swirl */
 .orange-sweep {
   position: fixed;
   inset: 0;
@@ -1016,6 +1020,7 @@ a {
   opacity: 0;
   visibility: hidden;
   transition: opacity 0.35s ease, visibility 0.35s ease;
+  background: #ddd8d1;
 }
 
 .orange-sweep.is-active {
@@ -1028,41 +1033,64 @@ a {
 .orange-sweep__base {
   position: absolute;
   inset: 0;
-  background: #c3bbb2;
+  background: #ddd8d1;
+}
+
+/* Full-bleed soft peach wash — no hard mid-screen cut */
+.orange-sweep__glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(
+      ellipse 95% 70% at 50% 108%,
+      rgba(253, 88, 4, 0.52) 0%,
+      rgba(253, 88, 4, 0.28) 28%,
+      rgba(253, 120, 60, 0.12) 48%,
+      rgba(221, 216, 209, 0.35) 68%,
+      transparent 82%
+    ),
+    radial-gradient(
+      ellipse 70% 45% at 50% 100%,
+      rgba(255, 140, 80, 0.22) 0%,
+      transparent 60%
+    );
 }
 
 .orange-sweep__grid {
   position: absolute;
-  inset: -8%;
+  inset: 0;
   pointer-events: none;
+  z-index: 1;
   background-image: radial-gradient(
     circle,
-    rgba(70, 60, 52, 0.28) 1.35px,
-    transparent 1.55px
+    rgba(70, 60, 52, 0.18) 1.1px,
+    transparent 1.35px
   );
-  background-size: 18px 18px;
+  background-size: 20px 20px;
   background-position: 0 0;
-  opacity: 0.55;
-}
-
-.orange-sweep__grid--wave {
-  opacity: 0.35;
-  background-image: radial-gradient(
-    circle,
-    rgba(90, 78, 68, 0.22) 1.1px,
-    transparent 1.3px
+  opacity: 0.45;
+  mask-image: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.55) 0%,
+    rgba(0, 0, 0, 0.35) 55%,
+    rgba(0, 0, 0, 0.15) 100%
   );
-  background-size: 22px 22px;
-  background-position: 11px 11px;
-  mix-blend-mode: multiply;
+  -webkit-mask-image: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.55) 0%,
+    rgba(0, 0, 0, 0.35) 55%,
+    rgba(0, 0, 0, 0.15) 100%
+  );
 }
 
 .orange-sweep__swirl {
   position: relative;
   z-index: 2;
-  width: min(46vw, 220px);
-  height: min(46vw, 220px);
-  animation: orange-sweep-spin 3s linear infinite;
+  width: min(42vw, 200px);
+  height: min(42vw, 200px);
+  animation: orange-sweep-spin 3.2s linear infinite;
 }
 
 .orange-sweep__arm {
@@ -1071,23 +1099,22 @@ a {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding-top: 8px;
+  padding-top: 4px;
   transform: rotate(var(--arm-rot, 0deg));
   pointer-events: none;
 }
 
-/* Figma 1917:18592 — glass capsule */
+/* Figma glass capsule — outer tip orange → center fades white */
 .orange-sweep__pill {
   position: relative;
   width: 58px;
   height: 124px;
   flex-shrink: 0;
-  transform: scale(0.58);
+  transform: scale(0.42);
   transform-origin: top center;
   opacity: 0.84;
 }
 
-/* Rectangle — gradient body (more transparent toward center) */
 .orange-sweep__pill-body {
   box-sizing: border-box;
   position: absolute;
@@ -1097,30 +1124,19 @@ a {
   top: 50%;
   margin-left: -62px;
   margin-top: -29px;
-  border: 1px solid transparent;
+  border: 1px solid #fd5804;
   border-radius: 106px;
-  background:
-    linear-gradient(
-      90deg,
-      #fd5804 0%,
-      #ffbe9d 29.81%,
-      rgba(255, 231, 218, 0.61) 55.88%,
-      rgba(255, 255, 255, 0.44) 72.99%
-    ) padding-box,
-    linear-gradient(
-      90deg,
-      #fd5804 0%,
-      rgba(255, 190, 157, 0.85) 30%,
-      rgba(255, 231, 218, 0.35) 56%,
-      rgba(255, 255, 255, 0.15) 73%
-    ) border-box;
-  background-clip: padding-box, border-box;
-  -webkit-background-clip: padding-box, border-box;
-  box-shadow: 0 33px 108.1px rgba(254, 98, 19, 0.25);
+  background: linear-gradient(
+    90deg,
+    #fd5804 0%,
+    #ffbe9d 29.81%,
+    rgba(255, 231, 218, 0.61) 55.88%,
+    rgba(255, 255, 255, 0.44) 72.99%
+  );
+  box-shadow: 0 33px 108px rgba(254, 98, 19, 0.25);
   transform: rotate(90deg);
 }
 
-/* Soft orange tip glow */
 .orange-sweep__pill-dot {
   position: absolute;
   width: 35px;
@@ -1133,38 +1149,6 @@ a {
   border-radius: 65.353px;
   opacity: 0.84;
   pointer-events: none;
-}
-
-.orange-sweep__base::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: min(42vh, 360px);
-  pointer-events: none;
-  z-index: 0;
-  background: radial-gradient(
-    circle at 50% 100%,
-    rgba(253, 88, 4, 0.48) 0%,
-    rgba(253, 88, 4, 0.28) 22%,
-    rgba(253, 88, 4, 0.1) 42%,
-    rgba(253, 88, 4, 0.03) 58%,
-    transparent 72%
-  );
-}
-
-.orange-sweep__label {
-  position: absolute;
-  bottom: clamp(2rem, 6vh, 3.5rem);
-  z-index: 1;
-  margin: 0;
-  font-family: var(--font-body);
-  font-size: clamp(0.78rem, 1.2vw, 0.92rem);
-  font-weight: 300;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: rgba(50, 42, 36, 0.45);
 }
 
 @keyframes orange-sweep-spin {

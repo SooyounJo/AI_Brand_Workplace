@@ -12,6 +12,7 @@ export default function HomePage() {
         />
       </Head>
       <main className="hero">
+        <Footer placement="top" />
         <div className="hero-main">
           <h1 className="hero-title">
             <span className="hero-title__ai">AI</span>
@@ -19,7 +20,7 @@ export default function HomePage() {
             <span className="hero-title__line">WorkPlace</span>
           </h1>
         </div>
-        <Footer />
+        <Footer placement="bottom" />
       </main>
     </>
   );
