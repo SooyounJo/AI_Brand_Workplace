@@ -53,49 +53,31 @@
   color: var(--ws-ink);
   overflow: hidden;
   background-color: var(--ws-bg);
+  /* White grid dots across the full canvas (including bottom) */
   background-image: radial-gradient(
     circle,
-    rgba(28, 26, 22, 0.06) 0.7px,
-    transparent 1px
+    rgba(255, 255, 255, 0.78) 0.85px,
+    transparent 1.15px
   );
-  background-size: 18px 18px;
+  background-size: 10px 10px;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Top peach wash + fine white grid dots (fade downward) */
+/* Top peach wash only — dots live on .workspace so they stay visible below */
 .workspace::before {
   content: "";
   position: absolute;
   left: 0;
   right: 0;
   top: 0;
-  height: min(28vh, 260px);
+  height: min(32vh, 300px);
   z-index: 0;
   pointer-events: none;
-  background-color: transparent;
-  background-image:
-    radial-gradient(circle, rgba(255, 255, 255, 0.92) 0.85px, transparent 1.15px),
-    linear-gradient(
-      180deg,
-      rgba(243, 176, 140, 0.72) 0%,
-      rgba(244, 196, 168, 0.45) 32%,
-      rgba(247, 220, 200, 0.2) 62%,
-      transparent 100%
-    );
-  background-size: 10px 10px, 100% 100%;
-  background-position: 0 0, 0 0;
-  mask-image: linear-gradient(
+  background: linear-gradient(
     180deg,
-    #000 0%,
-    rgba(0, 0, 0, 0.85) 38%,
-    rgba(0, 0, 0, 0.35) 72%,
-    transparent 100%
-  );
-  -webkit-mask-image: linear-gradient(
-    180deg,
-    #000 0%,
-    rgba(0, 0, 0, 0.85) 38%,
-    rgba(0, 0, 0, 0.35) 72%,
+    rgba(243, 176, 140, 0.72) 0%,
+    rgba(244, 196, 168, 0.42) 36%,
+    rgba(247, 220, 200, 0.18) 68%,
     transparent 100%
   );
 }
